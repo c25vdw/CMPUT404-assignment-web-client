@@ -21,6 +21,7 @@
 import sys
 import socket
 import re
+from typing import List
 # you may use urllib to encode data appropriately
 import urllib.parse
 
@@ -32,7 +33,11 @@ class HTTPResponse(object):
         self.code = code
         self.body = body
 
+    def __repr__(self):
+        return f"{self.code} body: <{self.body}>"
+
 class HTTPClient(object):
+    DEFAULT_PORT = 80 
     #def get_host_port(self,url):
 
     def connect(self, host, port):
@@ -40,11 +45,16 @@ class HTTPClient(object):
         self.socket.connect((host, port))
         return None
 
-    def get_code(self, data):
+    def get_code(self, headers):
+        for header in headers:
+            if header.startswith('HTTP'):
+                return int(header.split(' ')[1])
         return None
 
-    def get_headers(self,data):
-        return None
+    def get_headers_body(self,data):
+        [headers, body] = data.split('\r\n\r\n')
+        headers = headers.split('\r\n')
+        return headers, body
 
     def get_body(self, data):
         return None
@@ -65,12 +75,50 @@ class HTTPClient(object):
                 buffer.extend(part)
             else:
                 done = not part
+            print(part)
         return buffer.decode('utf-8')
 
+    def prepare_host(self, url):
+        return url.split('://')[1].split('/')[0]
+
+    def prepare_path(self, url):
+        without_protocol = url.split('://')[1]
+        path_start = without_protocol.find('/')
+        if path_start == -1:
+            return '/'
+        return without_protocol[path_start:]
+
+    def prepare_port(self, url):
+        if len(url.split('://')[1].split(':')) > 1:
+            return int(url.split('://')[1].split(':')[1].split('/')[0])
+        return 80
+
     def GET(self, url, args=None):
-        code = 500
-        body = ""
-        return HTTPResponse(code, body)
+        try:
+            host = self.prepare_host(url)
+            port = self.prepare_port(url)
+
+            # prepare header
+            buf = f"""GET {self.prepare_path(url)} HTTP/1.1\r
+Host: {self.prepare_host(url)}\r
+User-Agent: Python/3.6\r
+Accept: */*\r
+\r\n""" 
+            print(buf, host, port)
+            # connect
+            self.connect(self.prepare_host(url).split(':')[0], self.prepare_port(url))
+            # send request
+            self.sendall(buf)
+
+            data = self.recvall(self.socket)
+            #
+            headers, body = self.get_headers_body(data)
+            code = self.get_code(headers)
+            print(f"response code {code}, body: {body}")
+            self.socket.close()
+            return HTTPResponse(code, body)
+        finally:
+            pass
 
     def POST(self, url, args=None):
         code = 500
